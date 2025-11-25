@@ -7,12 +7,12 @@ import (
 )
 
 func main() {
-	tree := rbtree.New()
+	tree := rbtree.New[string, string]()
 
 	// 샘플 데이터 삽입
 	samples := []struct {
 		key   string
-		value interface{}
+		value string
 	}{
 		{"k", "카카오"},
 		{"g", "구글"},

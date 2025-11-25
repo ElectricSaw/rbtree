@@ -2,6 +2,7 @@ package rbtree
 
 import (
 	"bytes"
+	"cmp"
 	"math/rand"
 	"sort"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 )
 
 func TestInsertAndSearch(t *testing.T) {
-	tree := New()
+	tree := New[string, int]()
 	values := []struct {
 		key   string
 		value int
@@ -37,12 +38,12 @@ func TestInsertAndSearch(t *testing.T) {
 		if node == nil || node.Key != v.key {
 			t.Fatalf("missing key %q after insert", v.key)
 		}
-		if got := node.Value.(int); got != v.value {
+		if got := node.Value; got != v.value {
 			t.Fatalf("key %q expected value %d got %d", v.key, v.value, got)
 		}
 	}
 
-	tree.InOrder(func(key string, value interface{}) {
+	tree.InOrder(func(key string, value int) {
 		node := tree.Search(key)
 		if node == nil {
 			t.Fatalf("InOrder returned key %q but Search failed", key)
@@ -54,7 +55,7 @@ func TestInsertAndSearch(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	tree := New()
+	tree := New[string, string]()
 	values := []string{"20", "15", "25", "10", "18", "8", "12", "16", "19"}
 
 	for _, k := range values {
@@ -80,7 +81,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestRBPropertiesRandom(t *testing.T) {
-	tree := New()
+	tree := New[string, int]()
 	const count = 1000
 	var inserted []string
 	seen := make(map[string]struct{})
@@ -107,7 +108,7 @@ func TestRBPropertiesRandom(t *testing.T) {
 	}
 
 	var got []string
-	tree.InOrder(func(key string, value interface{}) {
+	tree.InOrder(func(key string, value int) {
 		got = append(got, key)
 	})
 	if !sort.StringsAreSorted(got) {
@@ -116,7 +117,7 @@ func TestRBPropertiesRandom(t *testing.T) {
 }
 
 func TestPrint(t *testing.T) {
-	tree := New()
+	tree := New[string, int]()
 	tree.Insert("b", 2)
 	tree.Insert("a", 1)
 	tree.Insert("c", 3)
@@ -133,13 +134,13 @@ func TestPrint(t *testing.T) {
 	}
 
 	var emptyBuf bytes.Buffer
-	New().Print(&emptyBuf)
+	New[string, int]().Print(&emptyBuf)
 	if strings.TrimSpace(emptyBuf.String()) != "(empty)" {
 		t.Fatalf("empty tree should print (empty), got %q", emptyBuf.String())
 	}
 }
 
-func assertRBProperties(t *testing.T, tree *Tree) {
+func assertRBProperties[K cmp.Ordered, V any](t *testing.T, tree *Tree[K, V]) {
 	t.Helper()
 	root := tree.Root()
 	if root == nil {
@@ -153,20 +154,20 @@ func assertRBProperties(t *testing.T, tree *Tree) {
 	verifyBlackHeight(t, root, expectedBlackHeight, 0)
 }
 
-func checkNoRedRed(t *testing.T, node *Node) {
+func checkNoRedRed[K cmp.Ordered, V any](t *testing.T, node *Node[K, V]) {
 	if node == nil {
 		return
 	}
 	if node.Color == red {
 		if colorOf(node.Left) == red || colorOf(node.Right) == red {
-			t.Fatalf("red node %q has red child", node.Key)
+			t.Fatalf("red node %v has red child", node.Key)
 		}
 	}
 	checkNoRedRed(t, node.Left)
 	checkNoRedRed(t, node.Right)
 }
 
-func blackHeight(node *Node) int {
+func blackHeight[K cmp.Ordered, V any](node *Node[K, V]) int {
 	height := 0
 	for node != nil {
 		if node.Color == black {
@@ -177,7 +178,7 @@ func blackHeight(node *Node) int {
 	return height
 }
 
-func verifyBlackHeight(t *testing.T, node *Node, expected, current int) {
+func verifyBlackHeight[K cmp.Ordered, V any](t *testing.T, node *Node[K, V], expected, current int) {
 	if node == nil {
 		if current != expected {
 			t.Fatalf("black height mismatch: expected %d got %d", expected, current)

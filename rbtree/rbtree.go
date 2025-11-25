@@ -1,6 +1,7 @@
 package rbtree
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -27,45 +28,53 @@ const (
 
 // Node는 트리의 한 정점을 표현한다. 실무 구현에서는 NIL 센티넬을 별도로 두지만,
 // 여기서는 이해를 돕기 위해 nil 포인터를 잎으로 간주하고 보정 과정에서 검정으로 취급한다.
-type Node struct {
-	Key    string
-	Value  interface{}
+// K는 정렬 가능한(ordered) 키 타입이고, V는 임의의 값 타입이다.
+type Node[K cmp.Ordered, V any] struct {
+	Key    K
+	Value  V
 	Color  Color
-	Parent *Node
-	Left   *Node
-	Right  *Node
+	Parent *Node[K, V]
+	Left   *Node[K, V]
+	Right  *Node[K, V]
 }
 
 // Tree 구조체는 루트 포인터와 원소 수를 추적하는 래퍼이다. 이 구조체에 연산 메서드를 붙여
 // 회전/보정과 같은 내부 구현을 숨기고 API만 노출한다.
-type Tree struct {
-	root *Node
+// K는 정렬 가능한(ordered) 키 타입이고, V는 임의의 값 타입이다.
+// ordered 타입은 숫자, 문자열 등 <, >, <=, >= 연산이 가능한 타입이다.
+type Tree[K cmp.Ordered, V any] struct {
+	root *Node[K, V]
 	size int
 }
 
-// New는 빈 RBTree를 만든다.
-func New() *Tree {
-	return &Tree{}
+// New는 빈 RBTree를 만든다. 키 타입 K와 값 타입 V를 지정하여 타입 안전한 트리를 생성한다.
+// K는 정렬 가능한 타입(int, string, float64 등)이어야 한다.
+// 예: tree := rbtree.New[string, int]()  // 문자열 키, 정수 값
+//
+//	tree := rbtree.New[int, string]()  // 정수 키, 문자열 값
+func New[K cmp.Ordered, V any]() *Tree[K, V] {
+	return &Tree[K, V]{}
 }
 
 // Size는 현재 저장된 키 개수를 돌려준다.
-func (t *Tree) Size() int {
+func (t *Tree[K, V]) Size() int {
 	return t.size
 }
 
 // Root는 테스트나 예제에서 구조를 살펴볼 수 있도록 루트 포인터를 돌려준다.
-func (t *Tree) Root() *Node {
+func (t *Tree[K, V]) Root() *Node[K, V] {
 	return t.root
 }
 
 // Search는 키를 가진 노드를 찾아 돌려준다. 일반적인 BST 탐색이므로 트리 구조를 바꾸지 않는다.
-func (t *Tree) Search(key string) *Node {
+func (t *Tree[K, V]) Search(key K) *Node[K, V] {
 	cur := t.root
 	for cur != nil {
+		cmp := cmp.Compare(key, cur.Key)
 		switch {
-		case key < cur.Key:
+		case cmp < 0:
 			cur = cur.Left
-		case key > cur.Key:
+		case cmp > 0:
 			cur = cur.Right
 		default:
 			return cur
@@ -75,17 +84,18 @@ func (t *Tree) Search(key string) *Node {
 }
 
 // Insert는 키를 삽입한다. 단순화를 위해 중복 키는 무시하지만, 필요하다면 갯수 누적 등의 동작으로 확장할 수 있다.
-func (t *Tree) Insert(key string, value interface{}) {
-	var parent *Node
+func (t *Tree[K, V]) Insert(key K, value V) {
+	var parent *Node[K, V]
 	cur := t.root
 
 	// 먼저 일반 BST 삽입을 통해 부모 위치를 찾는다.
 	for cur != nil {
 		parent = cur
+		cmp := cmp.Compare(key, cur.Key)
 		switch {
-		case key < cur.Key:
+		case cmp < 0:
 			cur = cur.Left
-		case key > cur.Key:
+		case cmp > 0:
 			cur = cur.Right
 		default:
 			// 이미 존재하는 키면 값을 갱신하고 종료한다.
@@ -95,10 +105,10 @@ func (t *Tree) Insert(key string, value interface{}) {
 	}
 
 	// 삽입 노드는 항상 빨강으로 시작한다. 검정으로 넣으면 규칙 (4)가 깨질 수 있다.
-	node := &Node{Key: key, Value: value, Color: red, Parent: parent}
+	node := &Node[K, V]{Key: key, Value: value, Color: red, Parent: parent}
 	if parent == nil {
 		t.root = node
-	} else if node.Key < parent.Key {
+	} else if cmp.Compare(node.Key, parent.Key) < 0 {
 		parent.Left = node
 	} else {
 		parent.Right = node
@@ -111,14 +121,14 @@ func (t *Tree) Insert(key string, value interface{}) {
 
 // Delete는 주어진 키를 삭제한다. 검정 노드를 제거하면 규칙 (2)(4)가 깨질 수 있으므로
 // double black 개념을 사용해 위로 전파하면서 복구한다.
-func (t *Tree) Delete(key string) bool {
+func (t *Tree[K, V]) Delete(key K) bool {
 	node := t.Search(key)
 	if node == nil {
 		return false
 	}
 
 	originalColor := node.Color
-	var x, replacementParent *Node
+	var x, replacementParent *Node[K, V]
 
 	switch {
 	case node.Left == nil:
@@ -159,12 +169,12 @@ func (t *Tree) Delete(key string) bool {
 }
 
 // InOrder는 키를 정렬 순서대로 순회하며 fn을 호출한다. 테스트에서 구조를 확인할 때 유용하다.
-func (t *Tree) InOrder(fn func(key string, value interface{})) {
+func (t *Tree[K, V]) InOrder(fn func(key K, value V)) {
 	inOrder(t.root, fn)
 }
 
 // Print은 트리 구조를 들여쓰기 형태로 출력한다. w가 nil이면 stdout으로 대체한다.
-func (t *Tree) Print(w io.Writer) {
+func (t *Tree[K, V]) Print(w io.Writer) {
 	if w == nil {
 		w = os.Stdout
 	}
@@ -176,12 +186,12 @@ func (t *Tree) Print(w io.Writer) {
 }
 
 // PrintStdout은 편의를 위해 stdout으로 바로 출력한다.
-func (t *Tree) PrintStdout() {
+func (t *Tree[K, V]) PrintStdout() {
 	t.Print(os.Stdout)
 }
 
 // insertFixup은 삽입으로 깨진 RB 규칙을 되돌린다. 빨강 부모-자식이 없어질 때까지 색을 바꾸거나 회전한다.
-func (t *Tree) insertFixup(node *Node) {
+func (t *Tree[K, V]) insertFixup(node *Node[K, V]) {
 	for node != t.root && colorOf(node.Parent) == red {
 		if node.Parent == node.Parent.Parent.Left {
 			uncle := node.Parent.Parent.Right
@@ -228,7 +238,7 @@ func (t *Tree) insertFixup(node *Node) {
 
 // deleteFixup은 검정 노드 삭제 후 생기는 double black을 제거한다.
 // x가 nil일 수도 있으므로 parent를 함께 넘겨 nil 역참조를 피한다.
-func (t *Tree) deleteFixup(x, parent *Node) {
+func (t *Tree[K, V]) deleteFixup(x, parent *Node[K, V]) {
 	for (x != t.root) && colorOf(x) == black {
 		if x == leftOf(parent) {
 			sibling := rightOf(parent)
@@ -298,7 +308,7 @@ func (t *Tree) deleteFixup(x, parent *Node) {
 }
 
 // rotateLeft는 노드를 오른쪽 자식과 회전시킨다. 포인터만 바뀌므로 O(1)이다.
-func (t *Tree) rotateLeft(node *Node) {
+func (t *Tree[K, V]) rotateLeft(node *Node[K, V]) {
 	right := node.Right
 	node.Right = right.Left
 	if right.Left != nil {
@@ -317,7 +327,7 @@ func (t *Tree) rotateLeft(node *Node) {
 }
 
 // rotateRight는 rotateLeft의 좌우 대칭이다.
-func (t *Tree) rotateRight(node *Node) {
+func (t *Tree[K, V]) rotateRight(node *Node[K, V]) {
 	left := node.Left
 	node.Left = left.Right
 	if left.Right != nil {
@@ -336,7 +346,7 @@ func (t *Tree) rotateRight(node *Node) {
 }
 
 // transplant는 서브트리 u 자리에 v를 끼워 넣는다. 삭제 과정에서 부모 포인터를 깔끔하게 유지하기 위한 헬퍼다.
-func (t *Tree) transplant(u, v *Node) {
+func (t *Tree[K, V]) transplant(u, v *Node[K, V]) {
 	if u.Parent == nil {
 		t.root = v
 	} else if u == u.Parent.Left {
@@ -351,35 +361,35 @@ func (t *Tree) transplant(u, v *Node) {
 
 // 헬퍼 함수들 ---------------------------------------------------------------
 
-func colorOf(node *Node) Color {
+func colorOf[K cmp.Ordered, V any](node *Node[K, V]) Color {
 	if node == nil {
 		return black
 	}
 	return node.Color
 }
 
-func leftOf(node *Node) *Node {
+func leftOf[K cmp.Ordered, V any](node *Node[K, V]) *Node[K, V] {
 	if node == nil {
 		return nil
 	}
 	return node.Left
 }
 
-func rightOf(node *Node) *Node {
+func rightOf[K cmp.Ordered, V any](node *Node[K, V]) *Node[K, V] {
 	if node == nil {
 		return nil
 	}
 	return node.Right
 }
 
-func minimum(node *Node) *Node {
+func minimum[K cmp.Ordered, V any](node *Node[K, V]) *Node[K, V] {
 	for node.Left != nil {
 		node = node.Left
 	}
 	return node
 }
 
-func inOrder(node *Node, fn func(string, interface{})) {
+func inOrder[K cmp.Ordered, V any](node *Node[K, V], fn func(K, V)) {
 	if node == nil {
 		return
 	}
@@ -388,13 +398,13 @@ func inOrder(node *Node, fn func(string, interface{})) {
 	inOrder(node.Right, fn)
 }
 
-func printNode(w io.Writer, node *Node, depth int) {
+func printNode[K cmp.Ordered, V any](w io.Writer, node *Node[K, V], depth int) {
 	if node == nil {
 		return
 	}
 	printNode(w, node.Right, depth+1)
 	indent := strings.Repeat("  ", depth)
-	fmt.Fprintf(w, "%s[%s] %s => %v\n", indent, colorString(node.Color), node.Key, node.Value)
+	fmt.Fprintf(w, "%s[%s] %v => %v\n", indent, colorString(node.Color), node.Key, node.Value)
 	printNode(w, node.Left, depth+1)
 }
 
