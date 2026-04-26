@@ -1,4 +1,4 @@
-module github.com/EletricSaw/rbtree
+module github.com/ElectricSaw/rbtree
 
 go 1.23.0
 

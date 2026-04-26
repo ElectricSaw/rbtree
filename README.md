@@ -25,7 +25,7 @@ package main
 
 import (
     "fmt"
-    "github.com/EletricSaw/rbtree/rbtree"
+    "github.com/ElectricSaw/rbtree/rbtree"
 )
 
 func main() {
